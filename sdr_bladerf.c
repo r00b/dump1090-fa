@@ -364,7 +364,7 @@ static void *handle_bladerf_samples(struct bladerf *dev,
         // read the next metadata header
         uint8_t *header = ((uint8_t*)samples) + offset;
         uint64_t metadata_magic = le32toh(*(uint32_t*)(header));
-        uint64_t metadata_timestamp = le64toh(*(uint64_t*)(header + 4));
+        uint64_t metadata_timestamp = OSSwapLittleToHostInt64(*(uint64_t*)(header + 4));
         uint32_t metadata_flags = le32toh(*(uint32_t*)(header + 12));
         void *sample_data = header + 16;
 

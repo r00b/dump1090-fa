@@ -85,7 +85,7 @@ static sdr_handler sdr_handlers[] = {
     { "bladerf", SDR_BLADERF, bladeRFInitConfig, bladeRFShowHelp, bladeRFHandleOption, bladeRFOpen, bladeRFRun, bladeRFClose },
 #endif
 
-    { "ifile", SDR_IFILE, ifileInitConfig, ifileShowHelp, ifileHandleOption, ifileOpen, ifileRun, ifileClose },
+    // { "ifile", SDR_IFILE, ifileInitConfig, ifileShowHelp, ifileHandleOption, ifileOpen, ifileRun, ifileClose },
     { "none", SDR_NONE, noInitConfig, noShowHelp, noHandleOption, noOpen, noRun, noClose },
 
     { NULL, SDR_NONE, NULL, NULL, NULL, NULL, NULL, NULL } /* must come last */

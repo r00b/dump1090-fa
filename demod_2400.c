@@ -72,8 +72,11 @@ void demodulate2400(struct mag_buf *mag)
     unsigned char *bestmsg;
     int bestscore, bestphase;
 
+    // maximum lookahead we use
+    assert(mag->overlap >= 19 + 1 + 269);
+
     uint16_t *m = mag->data;
-    uint32_t mlen = mag->length;
+    uint32_t mlen = mag->validLength - mag->overlap;
 
     uint64_t sum_scaled_signal_power = 0;
 
@@ -167,10 +170,10 @@ void demodulate2400(struct mag_buf *mag)
 
         // try all phases
         Modes.stats_current.demod_preambles++;
-        bestmsg = NULL; bestscore = -2; bestphase = -1;
+        bestmsg = NULL; bestscore = SR_NOT_SET; bestphase = -1;
         for (try_phase = 4; try_phase <= 8; ++try_phase) {
             uint16_t *pPtr;
-            int phase, i, score, bytelen;
+            int phase, i, score;
 
             // Decode all the next 112 bits, regardless of the actual message
             // size. We'll check the actual message type later
@@ -178,8 +181,7 @@ void demodulate2400(struct mag_buf *mag)
             pPtr = &m[j+19] + (try_phase/5);
             phase = try_phase % 5;
 
-            bytelen = MODES_LONG_MSG_BYTES;
-            for (i = 0; i < bytelen; ++i) {
+            for (i = 0; i < MODES_LONG_MSG_BYTES; ++i) {
                 uint8_t theByte = 0;
 
                 switch (phase) {
@@ -261,23 +263,10 @@ void demodulate2400(struct mag_buf *mag)
                 }
 
                 msg[i] = theByte;
-                if (i == 0) {
-                    switch (msg[0] >> 3) {
-                    case 0: case 4: case 5: case 11:
-                        bytelen = MODES_SHORT_MSG_BYTES; break;
-
-                    case 16: case 17: case 18: case 20: case 21: case 24:
-                        break;
-
-                    default:
-                        bytelen = 1; // unknown DF, give up immediately
-                        break;
-                    }
-                }
             }
 
             // Score the mode S message and see if it's any good.
-            score = scoreModesMessage(msg, i*8);
+            score = scoreModesMessage(msg);
             if (score > bestscore) {
                 // new high score!
                 bestmsg = msg;
@@ -292,8 +281,8 @@ void demodulate2400(struct mag_buf *mag)
         }
 
         // Do we have a candidate?
-        if (bestscore < 0) {
-            if (bestscore == -1)
+        if (bestscore < SR_ACCEPT_THRESHOLD) {
+            if (bestscore >= SR_UNKNOWN_THRESHOLD)
                 Modes.stats_current.demod_rejected_unknown_icao++;
             else
                 Modes.stats_current.demod_rejected_bad++;
@@ -316,17 +305,11 @@ void demodulate2400(struct mag_buf *mag)
         mm.score = bestscore;
 
         // Decode the received message
-        {
-            int result = decodeModesMessage(&mm, bestmsg);
-            if (result < 0) {
-                if (result == -1)
-                    Modes.stats_current.demod_rejected_unknown_icao++;
-                else
-                    Modes.stats_current.demod_rejected_bad++;
-                continue;
-            } else {
-                Modes.stats_current.demod_accepted[mm.correctedbits]++;
-            }
+        if (decodeModesMessage(&mm, bestmsg) < 0) {
+            Modes.stats_current.demod_rejected_bad++;
+            continue;
+        } else {
+            Modes.stats_current.demod_accepted[mm.correctedbits]++;
         }
 
         // measure signal power
@@ -368,8 +351,8 @@ void demodulate2400(struct mag_buf *mag)
     /* update noise power */
     {
         double sum_signal_power = sum_scaled_signal_power / 65535.0 / 65535.0;
-        Modes.stats_current.noise_power_sum += (mag->mean_power * mag->length - sum_signal_power);
-        Modes.stats_current.noise_power_count += mag->length;
+        Modes.stats_current.noise_power_sum += (mag->mean_power * mlen - sum_signal_power);
+        Modes.stats_current.noise_power_count += mlen;
     }
 }
 
@@ -471,7 +454,7 @@ void demodulate2400AC(struct mag_buf *mag)
 {
     struct modesMessage mm;
     uint16_t *m = mag->data;
-    uint32_t mlen = mag->length;
+    uint32_t mlen = mag->validLength - mag->overlap;
     unsigned f1_sample;
 
     memset(&mm, 0, sizeof(mm));
@@ -552,7 +535,7 @@ void demodulate2400AC(struct mag_buf *mag)
         // F2 is 20.3us / 14 bit periods after F1
         unsigned f2_clock = f1_clock + (87 * 14);
         unsigned f2_sample = f2_clock / 25;
-        assert(f2_sample < mlen + Modes.trailing_samples);
+        assert(f2_sample < mlen + mag->overlap);
 
         if (!(m[f2_sample-1] < m[f2_sample+0]))
             continue;
